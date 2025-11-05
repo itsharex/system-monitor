@@ -54,12 +54,8 @@ impl GpuMonitor {
 
     /// 获取GPU信息
     pub fn get_gpu_info(&self) -> Option<GpuInfo> {
-        // 检查NVML是否可用
-        if self.nvml.is_none() {
-            return None;
-        }
-
-        let nvml = self.nvml.as_ref().unwrap();
+        // 检查NVML是否可用，使用?操作符简化代码
+        let nvml = self.nvml.as_ref()?;
 
         // 获取第一个GPU的信息（后续可以扩展为多GPU支持）
         match nvml.device_by_index(0) {

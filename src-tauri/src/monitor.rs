@@ -7,10 +7,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+// 简化复杂类型的定义
+type NetworkDataMap = HashMap<String, (u64, u64, Instant)>;
+
 /// 系统监控器
 pub struct SystemMonitor {
     system: Arc<Mutex<System>>,
-    last_network_data: Arc<Mutex<HashMap<String, (u64, u64, Instant)>>>,
+    last_network_data: Arc<Mutex<NetworkDataMap>>,
     config: MonitorConfig,
     gpu_monitor: GpuMonitor,
 }
@@ -232,8 +235,8 @@ impl SystemMonitor {
                 temperatures.push(TemperatureInfo {
                     label: component.label().to_string(),
                     temperature: temp,
-                    max: component.max().into(),
-                    critical: component.critical().into(),
+                    max: component.max(),
+                    critical: component.critical(),
                 });
             }
         }
