@@ -1,21 +1,28 @@
 use crate::models::*;
 use crate::gpu_monitor::GpuMonitor;
+use crate::retry::{RetryManager, RetryConfig};
+use crate::errors::MonitorError;
+use crate::adaptive_refresh::{AdaptiveRefreshManager, RefreshStatistics};
 use sysinfo::{
     Components, Disks, Networks, System, ProcessesToUpdate,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tokio::time::sleep;
+use tokio::sync::RwLock;
 
 // 简化复杂类型的定义
 type NetworkDataMap = HashMap<String, (u64, u64, Instant)>;
 
-/// 系统监控器
+/// 系统监控器（优化为异步安全，支持智能重试和自适应刷新）
 pub struct SystemMonitor {
-    system: Arc<Mutex<System>>,
+    system: Arc<RwLock<System>>,
     last_network_data: Arc<Mutex<NetworkDataMap>>,
     config: MonitorConfig,
     gpu_monitor: GpuMonitor,
+    retry_manager: RetryManager,
+    adaptive_refresh: AdaptiveRefreshManager,
 }
 
 impl SystemMonitor {
@@ -36,23 +43,56 @@ impl SystemMonitor {
             }
         };
 
+        // 创建自适应刷新管理器
+        let adaptive_refresh = AdaptiveRefreshManager::new(config.refresh_strategy.clone().into());
+
         Self {
-            system: Arc::new(Mutex::new(system)),
+            system: Arc::new(RwLock::new(system)),
             last_network_data: Arc::new(Mutex::new(HashMap::new())),
             config,
             gpu_monitor,
+            retry_manager: RetryManager::new(RetryConfig::default()),
+            adaptive_refresh,
         }
     }
 
-    /// 刷新系统信息
-    pub fn refresh(&mut self) -> SystemInfo {
-        let mut system = self.system.lock().unwrap();
+    /// 刷新系统信息（异步版本，提升性能，异步安全，支持智能重试）
+    pub async fn refresh(&mut self) -> Result<SystemInfo, String> {
+        self.refresh_internal().await.map_err(|e| e.to_string())
+    }
+
+    /// 带智能重试的刷新系统信息
+    pub async fn refresh_with_retry(&mut self) -> Result<SystemInfo, String> {
+        // 由于异步和借用检查器限制，简化重试逻辑
+        match self.refresh_internal().await {
+            Ok(info) => Ok(info),
+            Err(error) => {
+                if error.is_retryable() {
+                    eprintln!("系统信息刷新失败，建议重试: {}", error);
+                    // 简单重试一次
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    match self.refresh_internal().await {
+                        Ok(info) => Ok(info),
+                        Err(e) => {
+                            eprintln!("系统信息刷新重试失败: {}", e);
+                            Err(e.to_string())
+                        }
+                    }
+                } else {
+                    eprintln!("系统信息刷新失败（不可重试）: {}", error);
+                    Err(error.to_string())
+                }
+            }
+        }
+    }
+
+    /// 内部刷新实现
+    async fn refresh_internal(&mut self) -> Result<SystemInfo, MonitorError> {
+        // 获取系统写锁，使用异步安全的 RwLock
+        let mut system = self.system.write().await;
 
         // 使用sysinfo 0.33的最新API
-        // 首先刷新CPU信息（需要先刷新才能获取正确的使用率）
         system.refresh_cpu_usage();
-
-        // 刷新内存信息
         system.refresh_memory();
 
         // 分别刷新其他组件
@@ -63,22 +103,20 @@ impl SystemMonitor {
         // 刷新进程
         system.refresh_processes(ProcessesToUpdate::All, false);
 
-        // 等待一小段时间让系统更新
-        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        // 释放锁，允许在等待期间其他操作访问系统
+        drop(system);
 
-        // 获取CPU使用率
+        // 异步等待一小段时间让系统更新（非阻塞，提升性能）
+        sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
+
+        // 重新获取锁来读取最终数据
+        let system = self.system.read().await;
+
+        // 获取各个组件信息
         let cpu_usage = self.get_cpu_usage(&system);
-
-        // 获取内存信息
         let memory = self.get_memory_info(&system);
-
-        // 获取网络信息（传入已刷新的网络数据）
         let network = self.get_network_info(&networks);
-
-        // 获取磁盘信息（传入已刷新的磁盘数据）
         let disk = self.get_disk_info(&disks);
-
-        // 获取系统详情
         let system_details = self.get_system_details(&system);
 
         // 获取温度信息（传入已刷新的组件数据）
@@ -88,17 +126,49 @@ impl SystemMonitor {
             Vec::new()
         };
 
-        SystemInfo {
+        Ok(SystemInfo {
             cpu_usage,
             memory,
             network,
             disk,
             system: system_details,
             temperatures,
-        }
+        })
     }
 
-  
+    /// 智能刷新系统信息（包含自适应频率管理）
+    pub async fn smart_refresh(&mut self) -> Result<SystemInfo, String> {
+        // 检查是否应该跳过刷新
+        if self.adaptive_refresh.should_skip_refresh() {
+            return Err("智能跳过本次刷新（系统稳定且空闲）".to_string());
+        }
+
+        // 执行刷新
+        let system_info = self.refresh_internal().await.map_err(|e| e.to_string())?;
+
+        // 计算下次刷新间隔
+        self.adaptive_refresh.calculate_next_interval(&system_info);
+
+        Ok(system_info)
+    }
+
+    /// 获取建议的刷新间隔
+    pub fn suggested_refresh_interval(&self) -> std::time::Duration {
+        self.adaptive_refresh.current_interval()
+    }
+
+    /// 获取刷新统计信息
+    pub fn get_refresh_statistics(&self) -> RefreshStatistics {
+        self.adaptive_refresh.get_statistics()
+    }
+
+    /// 更新配置（包括刷新策略）
+    pub fn update_config(&mut self, config: MonitorConfig) {
+        self.config = config.clone();
+        // 更新自适应刷新策略
+        self.adaptive_refresh.update_strategy(config.refresh_strategy.into());
+    }
+
     /// 获取CPU使用率
     fn get_cpu_usage(&self, system: &System) -> f32 {
         if self.config.enable_cpu {
@@ -271,11 +341,7 @@ impl SystemMonitor {
             .map_err(|e| e.to_string())
     }
 
-    /// 更新配置
-    pub fn update_config(&mut self, config: MonitorConfig) {
-        self.config = config;
-    }
-
+  
     /// 获取当前配置
     pub fn get_config(&self) -> &MonitorConfig {
         &self.config
