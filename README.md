@@ -101,9 +101,9 @@ pnpm tauri build --target x86_64-unknown-linux-gnu # Linux
 
 | 平台 | 文件名 | 大小 |
 |------|--------|------|
-| **Windows** | `system_monitor_1.0.2_x64-setup.exe` | ~8MB |
-| **macOS** | `system_monitor_1.0.2_x64.dmg` | ~6MB |
-| **Linux** | `system_monitor_1.0.2_amd64.AppImage` | ~7MB |
+| **Windows** | `system_monitor_1.0.0_x64-setup.exe` | ~8MB |
+| **macOS** | `system_monitor_1.0.0_x64.dmg` | ~6MB |
+| **Linux** | `system_monitor_1.0.0_amd64.AppImage` | ~7MB |
 
 ### 安装说明
 
@@ -622,6 +622,16 @@ describe('SystemMonitor', () => {
 ```
 
 ## 📊 路线图
+
+### v1.0.0 (当前版本 - 2025-01-07) ✅
+
+- [x] **核心监控功能**: CPU、内存、GPU、网络实时监控
+- [x] **悬浮窗设计**: 透明可置顶的监控窗口
+- [x] **系统托盘集成**: 完整的托盘菜单功能
+- [x] **跨平台支持**: Windows、macOS、Linux 三平台支持
+- [x] **GPU 监控**: NVIDIA GPU 监控支持
+- [x] **自适应刷新**: 根据系统负载调整刷新频率
+- [x] **窗口设置**: 置顶、任务栏显示等窗口偏好设置
 
 ### v1.1.0 (开发中)
 
