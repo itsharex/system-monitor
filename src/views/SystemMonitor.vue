@@ -1,5 +1,6 @@
 <template>
   <div
+      ref="monitorRef"
       class="floating-monitor"
       data-tauri-drag-region
       :style="monitorStyles"
@@ -52,8 +53,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { getCurrentWindow, type Window } from '@tauri-apps/api/window'
+import { LogicalSize } from '@tauri-apps/api/dpi'
 import { useSystemMonitor } from '@/composables/useSystemMonitor'
 import { useSystemStore } from '@/stores/system'
 import { useSettingsStore, type SettingsState } from '@/stores/settings'
@@ -69,7 +72,24 @@ const systemStore = useSystemStore()
 const settingsStore = useSettingsStore()
 const { settings } = storeToRefs(settingsStore)
 
+let mainWindow: Window | null = null
+const ensureMainWindow = () => {
+  if (mainWindow) return mainWindow
+  if (typeof window === 'undefined') return null
+  if (!('__TAURI_INTERNALS__' in window)) return null
+  mainWindow = getCurrentWindow()
+  return mainWindow
+}
+
 const loading = computed(() => !systemInfo.value && !error.value)
+const monitorRef = ref<HTMLElement | null>(null)
+let resizeObserver: ResizeObserver | null = null
+let resizeRaf = 0
+const lastAppliedSize = ref<{ width: number; height: number }>({ width: 0, height: 0 })
+const MIN_WIDTH = 200
+const MIN_HEIGHT = 48
+const WIDTH_BUFFER = 24
+const HEIGHT_BUFFER = 16
 
 const cpuDisplay = ref<number | null>(null)
 const memoryDisplay = ref<number | null>(null)
@@ -198,6 +218,110 @@ const monitorStyles = computed(() => {
   }
 })
 
+const scheduleWindowResize = (width: number, height: number) => {
+  if (typeof window === 'undefined') return
+  if (resizeRaf) {
+    window.cancelAnimationFrame(resizeRaf)
+  }
+  resizeRaf = window.requestAnimationFrame(() => {
+    resizeRaf = 0
+    applyWindowSize(width, height)
+  })
+}
+
+const extractEntrySize = (entry: ResizeObserverEntry) => {
+  const box = Array.isArray(entry.borderBoxSize)
+    ? entry.borderBoxSize[0]
+    : entry.borderBoxSize
+
+  if (box && typeof box === 'object') {
+    return {
+      width: box.inlineSize ?? entry.contentRect.width,
+      height: box.blockSize ?? entry.contentRect.height
+    }
+  }
+
+  return {
+    width: entry.contentRect.width,
+    height: entry.contentRect.height
+  }
+}
+
+const applySizeBuffer = (width: number, height: number) => {
+  const el = monitorRef.value
+  const contentWidth = el ? Math.max(width, el.scrollWidth) : width
+  const contentHeight = el ? Math.max(height, el.scrollHeight) : height
+  return {
+    width: contentWidth + WIDTH_BUFFER,
+    height: contentHeight + HEIGHT_BUFFER
+  }
+}
+
+const applyWindowSize = async (rawWidth: number, rawHeight: number) => {
+  const win = ensureMainWindow()
+  if (!win) return
+  const buffered = applySizeBuffer(rawWidth, rawHeight)
+  const width = Math.max(Math.ceil(buffered.width), MIN_WIDTH)
+  const height = Math.max(Math.ceil(buffered.height), MIN_HEIGHT)
+  if (
+    width === lastAppliedSize.value.width &&
+    height === lastAppliedSize.value.height
+  ) {
+    return
+  }
+  lastAppliedSize.value = { width, height }
+  try {
+    const logicalSize = new LogicalSize(width, height)
+    await win.setSize(logicalSize)
+    await win.setMinSize(logicalSize)
+    await win.setMaxSize(logicalSize)
+  } catch (err) {
+    console.error('更新窗口尺寸失败:', err)
+  }
+}
+
+const startSizeObserver = () => {
+  if (!monitorRef.value || typeof ResizeObserver === 'undefined') return
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver((entries) => {
+    const entry = entries[0]
+    if (!entry) return
+    const { width, height } = extractEntrySize(entry)
+    scheduleWindowResize(width, height)
+  })
+  resizeObserver.observe(monitorRef.value)
+  const rect = monitorRef.value.getBoundingClientRect()
+  scheduleWindowResize(rect.width, rect.height)
+}
+
+watch(
+  () => settings.value.alwaysOnTop,
+  async (value) => {
+    const win = ensureMainWindow()
+    if (!win) return
+    try {
+      await win.setAlwaysOnTop(value)
+    } catch (err) {
+      console.error('更新窗口置顶失败:', err)
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => settings.value.showInTaskbar,
+  async (show) => {
+    const win = ensureMainWindow()
+    if (!win) return
+    try {
+      await win.setSkipTaskbar(!show)
+    } catch (err) {
+      console.error('更新任务栏显示状态失败:', err)
+    }
+  },
+  { immediate: true }
+)
+
 const showNetwork = computed(() => settings.value.enableNetworkMonitor && !!systemInfo.value?.network)
 
 const handleContextMenu = (e: MouseEvent) => {
@@ -206,6 +330,8 @@ const handleContextMenu = (e: MouseEvent) => {
 
 onMounted(async () => {
   await settingsStore.ensureInitialized()
+  await nextTick()
+  startSizeObserver()
   const [isAvailable] = await systemStore.getGpuMonitorStatus()
   if (isAvailable) {
     await systemStore.getGpuNames()
@@ -214,19 +340,29 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // 预留清理逻辑
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  if (resizeRaf && typeof window !== 'undefined') {
+    window.cancelAnimationFrame(resizeRaf)
+    resizeRaf = 0
+  }
 })
 </script>
 
 <style scoped>
 .floating-monitor {
-  height: 42px;
+  min-height: 40px;
   font-weight: 600;
   border-radius: 22px;
-  line-height: 42px;
-  padding: 0 20px;
-  display: flex;
+  padding: 8px 20px;
+  display: inline-flex;
   align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: calc(100vw - 12px);
+  white-space: nowrap;
   border: 1px solid transparent;
   transition: opacity 0.2s ease;
 }

@@ -114,10 +114,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const syncWindowPreferences = async () => {
     try {
       const mainWindow = await getMainWindow()
-      if (!mainWindow) return
-      await mainWindow.setAlwaysOnTop(settings.value.alwaysOnTop)
-      await mainWindow.setSkipTaskbar(!settings.value.showInTaskbar)
-      if (settings.value.windowWidth && settings.value.windowHeight) {
+      if (mainWindow && settings.value.windowWidth && settings.value.windowHeight) {
         try {
           suppressResizeCapture = true
           await mainWindow.setSize(new LogicalSize(
@@ -129,7 +126,16 @@ export const useSettingsStore = defineStore('settings', () => {
         }
       }
     } catch (err) {
-      console.error('应用窗口偏好失败:', err)
+      console.error('应用窗口尺寸失败:', err)
+    }
+
+    try {
+      await invoke('apply_window_preferences', {
+        always_on_top: settings.value.alwaysOnTop,
+        show_in_taskbar: settings.value.showInTaskbar
+      })
+    } catch (err) {
+      console.error('调用窗口偏好命令失败:', err)
     }
   }
 

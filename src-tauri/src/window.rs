@@ -167,6 +167,42 @@ pub async fn close_settings_window(app_handle: tauri::AppHandle) -> Result<(), S
     Ok(())
 }
 
+/// 应用窗口偏好（置顶 / 任务栏可见等）
+///
+/// # Arguments
+/// * `app_handle` - 应用句柄
+/// * `always_on_top` - 是否置顶
+/// * `show_in_taskbar` - 是否在任务栏显示窗口图标
+#[tauri::command]
+pub async fn apply_window_preferences(
+    app_handle: tauri::AppHandle,
+    always_on_top: Option<bool>,
+    show_in_taskbar: Option<bool>,
+) -> Result<(), String> {
+    let Some(window) = app_handle.get_webview_window("main") else {
+        error!("应用窗口偏好失败: 找不到主窗口");
+        return Err("找不到主窗口".into());
+    };
+
+    if let Some(value) = always_on_top {
+        window.set_always_on_top(value).map_err(|e| {
+            error!("设置置顶状态失败: {}", e);
+            e.to_string()
+        })?;
+        debug!("窗口置顶状态更新为 {}", value);
+    }
+
+    if let Some(show) = show_in_taskbar {
+        window.set_skip_taskbar(!show).map_err(|e| {
+            error!("设置任务栏可见失败: {}", e);
+            e.to_string()
+        })?;
+        debug!("窗口任务栏可见性更新为 {}", show);
+    }
+
+    Ok(())
+}
+
 /// 退出应用程序
 ///
 /// # Arguments

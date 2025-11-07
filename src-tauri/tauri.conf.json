@@ -16,7 +16,7 @@
         "title": "",
         "width": 600,
         "height": 20,
-        "resizable": true,
+        "resizable": false,
         "transparent": true,
         "alwaysOnTop": true,
         "decorations": false,

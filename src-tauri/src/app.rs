@@ -165,6 +165,7 @@ pub fn run() {
             window::toggle_window,
             window::show_settings_window,
             window::close_settings_window,
+            window::apply_window_preferences,
             window::quit_app,
             // 存储相关命令
             store_commands::save_settings,
