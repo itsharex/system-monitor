@@ -1,9 +1,13 @@
 import { ref, onMounted, onUnmounted, watch, toRefs } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useSystemStore } from '@/stores/system'
+import { useSettingsStore } from '@/stores/settings'
 
 export function useSystemMonitor(autoStart = true, interval = 1000) {
   const systemStore = useSystemStore()
+  const settingsStore = useSettingsStore()
   const isPolling = ref(false)
+  const pollDelay = ref(interval)
   let pollInterval: number | null = null
 
   // 获取store的响应式引用
@@ -26,13 +30,11 @@ export function useSystemMonitor(autoStart = true, interval = 1000) {
 
     isPolling.value = true
     pollInterval = window.setInterval(async () => {
-      // 直接调用 fetchSystemInfo 来获取最新数据，而不是读取缓存
       await systemStore.fetchSystemInfo()
-      // 每5次轮询更新一次GPU信息（减少GPU查询频率）
       if (Math.random() < 0.2) {
         await systemStore.fetchGpuInfo()
       }
-    }, interval)
+    }, pollDelay.value)
   }
 
   // 停止轮询
@@ -61,18 +63,22 @@ export function useSystemMonitor(autoStart = true, interval = 1000) {
 
   // 更新轮询间隔
   const updateInterval = (newInterval: number) => {
+    if (!newInterval || Number.isNaN(newInterval)) return
+    pollDelay.value = newInterval
     if (isPolling.value) {
       stopPolling()
       startPolling()
     }
   }
 
-  // 监听配置变化
+  // 监听设置中的刷新间隔，动态调整轮询频率
+  const { settings } = storeToRefs(settingsStore)
   watch(
-    () => systemStore.config.refresh_interval,
+    () => settings.value.refreshInterval,
     (newInterval) => {
       updateInterval(newInterval)
-    }
+    },
+    { immediate: true }
   )
 
   // 生命周期

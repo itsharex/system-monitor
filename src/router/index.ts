@@ -18,4 +18,10 @@ const router = createRouter({
   ]
 })
 
+router.afterEach((to) => {
+  if (typeof document === 'undefined') return
+  const isSettings = to.name === 'Settings'
+  document.body.classList.toggle('settings-page', isSettings)
+})
+
 export default router

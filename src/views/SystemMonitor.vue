@@ -1,5 +1,5 @@
 <template>
-  <div class="floating-monitor" data-tauri-drag-region>
+  <div class="floating-monitor" data-tauri-drag-region :style="monitorStyles">
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-state">
       <div class="loading-spinner"></div>
@@ -20,16 +20,17 @@
       <span class="data-label">内存</span>
       <span class="data-value">{{ getMemoryUsage }}%</span>
 
-      <span class="data-divider">|</span>
+      <template v-if="settings.enableGpuMonitor">
+        <span class="data-divider">|</span>
+        <span class="data-label">GPU</span>
+        <span v-if="gpuInfo" class="data-value">{{ Math.round(gpuInfo.usage_percent) }}%</span>
+        <span v-else class="data-value">--</span>
+      </template>
 
-      <span class="data-label">GPU</span>
-      <span v-if="gpuInfo" class="data-value">{{ Math.round(gpuInfo.usage_percent) }}%</span>
-      <span v-else class="data-value">--</span>
+      <span v-if="settings.enableNetworkMonitor && systemInfo?.network" class="data-divider">|</span>
 
-      <span v-if="systemInfo?.network" class="data-divider">|</span>
-
-      <span v-if="systemInfo?.network" class="data-label">网络</span>
-      <span v-if="systemInfo?.network" class="data-value network-values">
+      <span v-if="settings.enableNetworkMonitor && systemInfo?.network" class="data-label">网络</span>
+      <span v-if="settings.enableNetworkMonitor && systemInfo?.network" class="data-value network-values">
         <div class="network-download">↓{{ networkSpeed.download }}</div>
         <div class="network-upload">↑{{ networkSpeed.upload }}</div>
       </span>
@@ -38,9 +39,11 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted} from 'vue'
-import {useSystemMonitor} from '@/composables/useSystemMonitor'
-import {useSystemStore} from '@/stores/system'
+import { computed, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useSystemMonitor } from '@/composables/useSystemMonitor'
+import { useSystemStore } from '@/stores/system'
+import { useSettingsStore } from '@/stores/settings'
 
 // 使用系统监控组合式函数
 const {
@@ -52,6 +55,8 @@ const {
 
 // 使用系统store
 const systemStore = useSystemStore()
+const settingsStore = useSettingsStore()
+const { settings } = storeToRefs(settingsStore)
 
 // 计算属性
 const loading = computed(() => {
@@ -74,8 +79,20 @@ const getMemoryUsage = computed(() => {
   return Math.round(systemInfo.value.memory.usage_percent)
 })
 
+const monitorStyles = computed(() => {
+  const opacity = (settings.value.opacity ?? 100) / 100
+  const color = settings.value.themeColor || '#3b82f6'
+  return {
+    opacity,
+    borderColor: color,
+    boxShadow: `0 8px 20px ${color}33`,
+    '--monitor-accent': color
+  }
+})
+
 // 组件挂载时测试GPU监控功能
 onMounted(async () => {
+  await settingsStore.ensureInitialized()
   // 测试GPU监控状态
   const [isAvailable, errorMessage] = await systemStore.getGpuMonitorStatus()
   console.log('🎮 GPU监控状态:', {
@@ -106,6 +123,8 @@ onMounted(async () => {
   border-radius: 20px;
   line-height: 39px;
   padding: 0 16px;
+  border: 1px solid transparent;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
 }
 
 /* 加载状态 */
@@ -155,7 +174,7 @@ onMounted(async () => {
 .data-label {
   font-size: 15px;
   font-weight: bold;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   /* 允许拖动事件穿透 */
   pointer-events: none;
@@ -173,7 +192,7 @@ onMounted(async () => {
 }
 
 .data-divider {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--monitor-accent, rgba(255, 255, 255, 0.5));
   font-size: 14px;
   font-weight: 300;
   margin: 0 6px;

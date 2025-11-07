@@ -6,9 +6,9 @@
 - 静态资源位于 `public/` 与 `src/assets/`，构建产物输出到 `dist/`；若需共享类型，可通过 `src-tauri/gen/` 中的自动生成绑定。
 
 ## 构建、测试与开发命令
-- `npm run dev`：启动 Vite + Tauri 联调，便于前后端同步调试。
-- `npm run build`：执行 TypeScript 检查并产出前端静态文件；完成后可用 `npm run tauri build` 打包桌面端。
-- `npm run tauri dev`：快速验证桌面端特性（托盘、自启动等）；Rust 侧热重载依赖 `cargo`。
+- `pnpm run dev`：启shiy1动 Vite + Tauri 联调，便于前后端同步调试。
+- `pnpm run build`：执行 TypeScript 检查并产出前端静态文件；完成后可用 `pnpm run tauri build` 打包桌面端。
+- `pnpm run tauri dev`：快速验证桌面端特性（托盘、自启动等）；Rust 侧热重载依赖 `cargo`。
 - `cargo test --manifest-path src-tauri/Cargo.toml`：在后端目录运行所有 Rust 测试，推荐配合 `RUST_LOG=debug` 追踪边界情况。
 
 ## 代码风格与命名
@@ -24,7 +24,7 @@
 ## 提交与合并
 - Git 历史遵循 Conventional Commits（`feat(monitor): ...`），描述聚焦可观测行为与作用域。
 - PR 描述应包含变更摘要、影响面、测试结果以及相关 issue/需求编号；涉及 UI 的请附截图或短视频。
-- 在通过 CI 之前请自检 `npm run build` 与 `cargo test`，并确认 `tauri.conf.json` 中的权限未意外放宽。
+- 在通过 CI 之前请自检 `pnpm run build` 与 `cargo test`，并确认 `tauri.conf.json` 中的权限未意外放宽。
 
 ## 安全与配置
 - `.env` 保持本地，不要提交；敏感键值通过操作系统密钥链或 Tauri `plugin-store` 管理。

@@ -1,25 +1,31 @@
 html, body {
     margin: 0;
     padding: 0;
-    overflow: hidden; /* 隐藏滚动条 */
     width: 100%;
     height: 100%;
 }
 
-/* 隐藏滚动条但保持滚动功能 */
-::-webkit-scrollbar {
+body:not(.settings-page) {
+    overflow: hidden; /* 监控主界面保持无滚动条 */
+    scrollbar-width: none;
+}
+
+body:not(.settings-page)::-webkit-scrollbar {
     display: none;
 }
 
-/* 针对Firefox */
-html, body {
-    scrollbar-width: none;
+body.settings-page {
+    overflow-y: auto; /* 设置页面允许滚动和下拉菜单 */
 }
 
 #app {
     width: 100%;
-    height: 100vh;
+    min-height: 100vh;
     color: #3bd45d;
     font-weight: bold;
-    overflow: hidden; /* 隐藏滚动条 */
+}
+
+body:not(.settings-page) #app {
+    height: 100vh;
+    overflow: hidden;
 }

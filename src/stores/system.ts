@@ -80,6 +80,35 @@ export interface GpuMemoryInfo {
   usage_percent: number
 }
 
+export type FixedRefreshStrategy = {
+  Fixed: {
+    interval_ms: number
+  }
+}
+
+export type AdaptiveRefreshStrategy = {
+  Adaptive: {
+    min_interval_ms: number
+    max_interval_ms: number
+    cpu_threshold: number
+    memory_threshold: number
+    change_threshold: number
+  }
+}
+
+export type PowerSavingRefreshStrategy = {
+  PowerSaving: {
+    base_interval_ms: number
+    idle_interval_ms: number
+    active_interval_ms: number
+  }
+}
+
+export type RefreshStrategyType =
+  | FixedRefreshStrategy
+  | AdaptiveRefreshStrategy
+  | PowerSavingRefreshStrategy
+
 export interface MonitorConfig {
   refresh_interval: number
   enable_cpu: boolean
@@ -88,7 +117,29 @@ export interface MonitorConfig {
   enable_disk: boolean
   enable_temperature: boolean
   enable_gpu: boolean
+  refresh_strategy: RefreshStrategyType
 }
+
+const createDefaultRefreshStrategy = (): RefreshStrategyType => ({
+  Adaptive: {
+    min_interval_ms: 500,
+    max_interval_ms: 5000,
+    cpu_threshold: 30,
+    memory_threshold: 70,
+    change_threshold: 5
+  }
+})
+
+const createDefaultMonitorConfig = (): MonitorConfig => ({
+  refresh_interval: 1000,
+  enable_cpu: true,
+  enable_memory: true,
+  enable_network: true,
+  enable_disk: true,
+  enable_temperature: true,
+  enable_gpu: true,
+  refresh_strategy: createDefaultRefreshStrategy()
+})
 
 export const useSystemStore = defineStore('system', () => {
   // 状态
@@ -96,15 +147,7 @@ export const useSystemStore = defineStore('system', () => {
   const gpuInfo = ref<GpuInfo | null>(null)
   const isMonitoring = ref(false)
   const lastUpdate = ref<Date | null>(null)
-  const config = ref<MonitorConfig>({
-    refresh_interval: 1000,
-    enable_cpu: true,
-    enable_memory: true,
-    enable_network: true,
-    enable_disk: true,
-    enable_temperature: true,
-    enable_gpu: true
-  })
+  const config = ref<MonitorConfig>(createDefaultMonitorConfig())
   const error = ref<string | null>(null)
 
   // 计算属性
